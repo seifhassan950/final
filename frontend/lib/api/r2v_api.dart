@@ -1,0 +1,23 @@
+import 'api_client.dart';
+import 'auth_service.dart';
+import 'ai_jobs_service.dart';
+import 'billing_service.dart';
+import 'dashboard_service.dart';
+import 'email_verification_service.dart';
+import 'marketplace_service.dart';
+import 'password_reset_service.dart';
+import 'profile_service.dart';
+import 'scan_jobs_service.dart';
+import 'social_service.dart';
+
+final ApiClient r2vApiClient = ApiClient();
+final AuthService r2vAuth = AuthService(r2vApiClient);
+final DashboardService r2vDashboard = DashboardService(r2vApiClient);
+final MarketplaceService r2vMarketplace = MarketplaceService(r2vApiClient);
+final AiJobsService r2vAiJobs = AiJobsService(r2vApiClient);
+final ScanJobsService r2vScanJobs = ScanJobsService(r2vApiClient);
+final ProfileService r2vProfile = ProfileService(r2vApiClient);
+final BillingService r2vBilling = BillingService(r2vApiClient);
+final PasswordResetService r2vPasswordReset = PasswordResetService(r2vApiClient);
+final EmailVerificationService r2vEmailVerification = EmailVerificationService(r2vApiClient);
+final SocialService r2vSocial = SocialService(r2vApiClient);
