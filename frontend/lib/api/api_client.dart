@@ -40,8 +40,10 @@ class ApiClient {
   }
 
   Uri _uri(String path, [Map<String, String>? query]) {
-    final p = path.startsWith('/') ? path : '/$path';
-    final u = Uri.parse('$_base$p');
+    final normalizedBase = _base.replaceFirst(RegExp(r'/+$'), '');
+    final normalizedPath = path.replaceFirst(RegExp(r'^/+'), '');
+    final p = '/$normalizedPath';
+    final u = Uri.parse('$normalizedBase$p');
     return query == null ? u : u.replace(queryParameters: query);
   }
 
