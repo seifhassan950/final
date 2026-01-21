@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import re
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,21 @@ from app.api.router import api_router
 
 configure_logging()
 log = get_logger(__name__)
+
+class NormalizePathMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in {"http", "websocket"}:
+            path = scope.get("path", "")
+            if "//" in path:
+                normalized = re.sub(r"/+", "/", path)
+                scope = dict(scope)
+                scope["path"] = normalized
+                if "raw_path" in scope:
+                    scope["raw_path"] = normalized.encode()
+        await self.app(scope, receive, send)
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -42,6 +58,7 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
 )
 
+app.add_middleware(NormalizePathMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(
     CORSMiddleware,
