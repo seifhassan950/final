@@ -21,6 +21,7 @@ class _WelcomeState extends State<Welcome> {
 
   late final VideoPlayerController _vc;
   bool _videoReady = false;
+  bool _videoFailed = false;
 
   // ✅ Tweak these
   final double videoRadius = 26;          // video corner roundness
@@ -39,6 +40,10 @@ class _WelcomeState extends State<Welcome> {
       if (!mounted) return;
       setState(() => _videoReady = true);
       _vc.play();
+    }).catchError((error) {
+      if (!mounted) return;
+      setState(() => _videoFailed = true);
+      debugPrint("Welcome video failed to load: $error");
     });
 
     _timer = Timer(const Duration(seconds:8), () {
@@ -139,6 +144,14 @@ class _WelcomeState extends State<Welcome> {
                                       width: _vc.value.size.width,
                                       height: _vc.value.size.height,
                                       child: VideoPlayer(_vc),
+                                    ),
+                                  )
+                                else if (_videoFailed)
+                                  Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Image.asset(
+                                      "assets/R2Vlogo.png",
+                                      fit: BoxFit.contain,
                                     ),
                                   )
                                 else
