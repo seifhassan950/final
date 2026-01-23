@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     verification_code_expires_min: int = 15
     password_reset_expires_min: int = 30
 
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    apple_oauth_client_id: str = ""
+    apple_team_id: str = ""
+    apple_key_id: str = ""
+    apple_private_key: str = ""
+    microsoft_oauth_client_id: str = ""
+    microsoft_oauth_client_secret: str = ""
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
     stripe_success_url: str = "http://localhost:55509/#/billing/success"

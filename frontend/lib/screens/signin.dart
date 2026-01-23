@@ -1,12 +1,15 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/r2v_api.dart';
 import '../api/api_exception.dart';
+import '../api/api_config_impl.dart';
 
 class SignIn extends StatefulWidget {
   const SignIn({super.key});
@@ -64,6 +67,28 @@ class _SignInState extends State<SignIn> {
       );
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _startOAuth(String provider) async {
+    if (_loading) return;
+
+    if (!kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Social sign-in is currently available on web only.')),
+      );
+      return;
+    }
+
+    final redirectUri = '${Uri.base.origin}/#/oauth/callback?provider=$provider';
+    final startUri = Uri.parse('${ApiConfig.baseUrl}/auth/oauth/$provider/start')
+        .replace(queryParameters: {'redirect_uri': redirectUri});
+
+    final launched = await launchUrl(startUri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open social sign-in.')),
+      );
     }
   }
 
@@ -322,11 +347,11 @@ class _SignInState extends State<SignIn> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _social(FontAwesomeIcons.google, () => Navigator.pushNamed(context, '/completeprofile')),
+            _social(FontAwesomeIcons.google, () => _startOAuth('google')),
             const SizedBox(width: 14),
-            _social(FontAwesomeIcons.apple, () => Navigator.pushNamed(context, '/completeprofile')),
+            _social(FontAwesomeIcons.apple, () => _startOAuth('apple')),
             const SizedBox(width: 14),
-            _social(FontAwesomeIcons.microsoft, () => Navigator.pushNamed(context, '/completeprofile')),
+            _social(FontAwesomeIcons.microsoft, () => _startOAuth('microsoft')),
           ],
         ),
       ],

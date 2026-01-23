@@ -12,6 +12,7 @@ import 'screens/verify_code.dart';
 import 'screens/forgot_password.dart';
 import 'screens/otp_verification.dart';
 import 'screens/set_new_password.dart';
+import 'screens/oauth_callback.dart';
 import 'screens/complete_profile.dart';
 import 'screens/home_screen.dart';
 import 'screens/ai_chat_screen.dart';
@@ -114,6 +115,9 @@ initialRoute: '/signin',
             break;
           case '/completeprofile':
             page = CompleteProfile();
+            break;
+          case '/oauth/callback':
+            page = const OAuthCallbackScreen();
             break;
           case '/home':
             page = const HomeScreen();

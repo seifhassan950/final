@@ -38,3 +38,13 @@ class PasswordResetIn(BaseModel):
 
 class ChangePasswordIn(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class OAuthStartOut(BaseModel):
+    authorization_url: str
+
+
+class OAuthTokenOut(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
