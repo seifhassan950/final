@@ -1,12 +1,15 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/r2v_api.dart';
 import '../api/api_exception.dart';
+import '../api/api_config_impl.dart';
 
 class SignUp extends StatefulWidget {
   const SignUp({super.key});
@@ -89,6 +92,28 @@ class _SignUpState extends State<SignUp> {
       );
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _startOAuth(String provider) async {
+    if (_loading) return;
+
+    if (!kIsWeb) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Social sign-in is currently available on web only.')),
+      );
+      return;
+    }
+
+    final redirectUri = '${Uri.base.origin}/#/oauth/callback?provider=$provider';
+    final startUri = Uri.parse('${ApiConfig.baseUrl}/auth/oauth/$provider/start')
+        .replace(queryParameters: {'redirect_uri': redirectUri});
+
+    final launched = await launchUrl(startUri, mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open social sign-in.')),
+      );
     }
   }
 
@@ -330,11 +355,11 @@ class _SignUpState extends State<SignUp> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _social(FontAwesomeIcons.apple),
+            _social(FontAwesomeIcons.apple, () => _startOAuth('apple')),
             const SizedBox(width: 14),
-            _social(FontAwesomeIcons.google),
+            _social(FontAwesomeIcons.google, () => _startOAuth('google')),
             const SizedBox(width: 14),
-            _social(FontAwesomeIcons.microsoft),
+            _social(FontAwesomeIcons.microsoft, () => _startOAuth('microsoft')),
           ],
         ),
 
@@ -423,9 +448,9 @@ class _SignUpState extends State<SignUp> {
     );
   }
 
-  Widget _social(IconData icon) {
+  Widget _social(IconData icon, VoidCallback onTap) {
     return GestureDetector(
-      onTap: _loading ? null : () => Navigator.pushNamed(context, '/completeprofile'),
+      onTap: _loading ? null : onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
