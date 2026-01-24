@@ -225,6 +225,7 @@ def _oauth_provider_config(provider: str) -> dict[str, str]:
             "scope": "openid email profile",
             "client_id": settings.google_oauth_client_id,
             "client_secret": settings.google_oauth_client_secret,
+            "mock": False,
         },
         "apple": {
             "auth_url": "https://appleid.apple.com/auth/authorize",
@@ -234,6 +235,7 @@ def _oauth_provider_config(provider: str) -> dict[str, str]:
             "scope": "name email",
             "client_id": settings.apple_oauth_client_id,
             "client_secret": "",
+            "mock": False,
         },
         "microsoft": {
             "auth_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
@@ -243,6 +245,7 @@ def _oauth_provider_config(provider: str) -> dict[str, str]:
             "scope": "openid email profile",
             "client_id": settings.microsoft_oauth_client_id,
             "client_secret": settings.microsoft_oauth_client_secret,
+            "mock": False,
         },
     }
 
@@ -251,16 +254,27 @@ def _oauth_provider_config(provider: str) -> dict[str, str]:
 
     config = configs[provider]
     if provider == "apple":
-        if not (
+        configured = (
             settings.apple_oauth_client_id
             and settings.apple_team_id
             and settings.apple_key_id
             and settings.apple_private_key
-        ):
-            bad_request("Apple OAuth is not configured")
+        )
+        if not configured:
+            if settings.env == "dev":
+                config["mock"] = True
+                config["client_id"] = config["client_id"] or "dev-apple-client-id"
+            else:
+                bad_request("Apple OAuth is not configured")
     else:
-        if not config["client_id"] or not config["client_secret"]:
-            bad_request(f"{provider.title()} OAuth is not configured")
+        configured = config["client_id"] and config["client_secret"]
+        if not configured:
+            if settings.env == "dev":
+                config["mock"] = True
+                config["client_id"] = config["client_id"] or f"dev-{provider}-client-id"
+                config["client_secret"] = config["client_secret"] or "dev-client-secret"
+            else:
+                bad_request(f"{provider.title()} OAuth is not configured")
 
     return config
 
@@ -271,6 +285,23 @@ def _encode_state(data: dict) -> str:
         "exp": int((dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=10)).timestamp()),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+def _mock_claims(provider: str) -> dict:
+    email = f"{provider}_dev@example.com"
+    return {"sub": f"dev-{provider}", "email": email, "preferred_username": email}
+
+def _issue_tokens_for_user(db: Session, user: User) -> TokenOut:
+    rt = create_refresh_token()
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(rt),
+            expires_at=refresh_expiry_utc(),
+        )
+    )
+    db.commit()
+    access = create_access_token(str(user.id), user.role)
+    return TokenOut(access_token=access, refresh_token=rt)
 
 
 def _decode_state(state: str) -> dict:
@@ -426,10 +457,25 @@ def _get_or_create_oauth_user(db: Session, provider: str, claims: dict) -> User:
 
 
 @router.get("/oauth/{provider}/start")
-def oauth_start(provider: str, redirect_uri: str, request: Request):
+def oauth_start(provider: str, redirect_uri: str, request: Request, db: Session = Depends(get_db)):
     config = _oauth_provider_config(provider)
     callback_url = str(request.url_for("oauth_callback", provider=provider))
     state = _encode_state({"provider": provider, "redirect_uri": redirect_uri})
+    if config.get("mock"):
+        user = _get_or_create_oauth_user(db, provider, _mock_claims(provider))
+        token_out = _issue_tokens_for_user(db, user)
+        if redirect_uri:
+            return RedirectResponse(
+                _append_redirect_params(
+                    redirect_uri,
+                    {
+                        "access_token": token_out.access_token,
+                        "refresh_token": token_out.refresh_token,
+                        "token_type": "bearer",
+                    },
+                )
+            )
+        return token_out
     authorize_url = _build_oauth_authorize_url(config, callback_url, state)
     return RedirectResponse(authorize_url)
 
@@ -460,6 +506,21 @@ def oauth_callback(
 
     redirect_uri = data.get("redirect_uri")
     config = _oauth_provider_config(provider)
+    if config.get("mock"):
+        user = _get_or_create_oauth_user(db, provider, _mock_claims(provider))
+        token_out = _issue_tokens_for_user(db, user)
+        if redirect_uri:
+            return RedirectResponse(
+                _append_redirect_params(
+                    redirect_uri,
+                    {
+                        "access_token": token_out.access_token,
+                        "refresh_token": token_out.refresh_token,
+                        "token_type": "bearer",
+                    },
+                )
+            )
+        return token_out
     callback_url = str(request.url_for("oauth_callback", provider=provider))
     token_response = _exchange_code_for_token(config, code, callback_url)
     id_token = token_response.get("id_token")
@@ -468,23 +529,18 @@ def oauth_callback(
 
     claims = _verify_id_token(config, id_token)
     user = _get_or_create_oauth_user(db, provider, claims)
-    rt = create_refresh_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=hash_refresh_token(rt),
-            expires_at=refresh_expiry_utc(),
-        )
-    )
-    db.commit()
-    access = create_access_token(str(user.id), user.role)
+    token_out = _issue_tokens_for_user(db, user)
 
     if redirect_uri:
         return RedirectResponse(
             _append_redirect_params(
                 redirect_uri,
-                {"access_token": access, "refresh_token": rt, "token_type": "bearer"},
+                {
+                    "access_token": token_out.access_token,
+                    "refresh_token": token_out.refresh_token,
+                    "token_type": "bearer",
+                },
             )
         )
 
-    return TokenOut(access_token=access, refresh_token=rt)
+    return token_out
