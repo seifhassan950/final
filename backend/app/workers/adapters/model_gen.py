@@ -8,14 +8,30 @@ import httpx
 
 from app.core.config import settings
 
+def _resolve_asset_url(response: httpx.Response, url: str) -> str:
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    base_url = str(response.request.url)
+    return urljoin(base_url, url)
+
 def _write_glb_from_response(response: httpx.Response, out_glb: Path) -> None:
     content_type = response.headers.get("content-type", "").lower()
     if "application/json" in content_type:
         payload = response.json()
+        artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+        if isinstance(artifacts, dict):
+            artifact_url = artifacts.get("glb_url") or artifacts.get("model_url")
+            if artifact_url:
+                resolved_url = _resolve_asset_url(response, artifact_url)
+                downloaded = httpx.get(resolved_url, timeout=settings.modal_api_timeout_s)
+                downloaded.raise_for_status()
+                out_glb.write_bytes(downloaded.content)
+                return
         for key in ("glb_url", "url", "output_url", "model_url"):
             url = payload.get(key)
             if url:
-                downloaded = httpx.get(url, timeout=settings.modal_api_timeout_s)
+                resolved_url = _resolve_asset_url(response, url)
+                downloaded = httpx.get(resolved_url, timeout=settings.modal_api_timeout_s)
                 downloaded.raise_for_status()
                 out_glb.write_bytes(downloaded.content)
                 return
@@ -39,7 +55,7 @@ def image_to_3d(image_path: Path, out_glb: Path) -> None:
     endpoint = urljoin(settings.modal_api_url.rstrip("/") + "/", settings.modal_image_to_3d_path.lstrip("/"))
     with httpx.Client(timeout=settings.modal_api_timeout_s) as client:
         with image_path.open("rb") as handle:
-            files = {"image": (image_path.name, handle, "image/png")}
+            files = {"file": (image_path.name, handle, "image/png")}
             response = client.post(endpoint, files=files)
         response.raise_for_status()
         _write_glb_from_response(response, out_glb)
