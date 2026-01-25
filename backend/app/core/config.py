@@ -51,8 +51,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 104857600
 
     modal_api_url: str = "https://realtwovirtual1--r2v-gpu-api-fastapi-app.modal.run"
-    modal_image_to_3d_path: str = "/image-to-3d"
-    modal_prompt_to_3d_path: str = "/text-to-3d"
+    modal_image_to_3d_path: str = "/generate"
+    modal_prompt_to_3d_path: str = "/generate-from-text"
     modal_api_timeout_s: int = 900
 
 settings = Settings()
