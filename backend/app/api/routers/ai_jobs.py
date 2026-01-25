@@ -11,6 +11,7 @@ from app.services.s3 import s3
 from app.core.config import settings
 
 router = APIRouter()
+legacy_router = APIRouter()
 
 def to_job_out(j: AIJob) -> JobOut:
     return JobOut(
@@ -21,12 +22,21 @@ def to_job_out(j: AIJob) -> JobOut:
         output_image_key=j.output_image_key, preview_keys=j.preview_keys or [], error=j.error
     )
 
-@router.post("/jobs", response_model=JobOut)
-def create_job(payload: AIJobCreateIn, db: Session = Depends(get_db), user = Depends(get_current_user)):
+def _create_job(payload: AIJobCreateIn, db: Session, user) -> JobOut:
     job = AIJob(user_id=user.id, prompt=payload.prompt, settings_json=payload.settings, status="queued", progress=0)
-    db.add(job); db.commit(); db.refresh(job)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
     ai_generate_task.delay(str(job.id))
     return to_job_out(job)
+
+@router.post("/jobs", response_model=JobOut)
+def create_job(payload: AIJobCreateIn, db: Session = Depends(get_db), user = Depends(get_current_user)):
+    return _create_job(payload, db, user)
+
+@legacy_router.post("/generate-from-text", response_model=JobOut)
+def generate_from_text(payload: AIJobCreateIn, db: Session = Depends(get_db), user = Depends(get_current_user)):
+    return _create_job(payload, db, user)
 
 @router.get("/jobs", response_model=list[JobOut])
 def list_jobs(limit: int = 20, offset: int = 0, db: Session = Depends(get_db), user = Depends(get_current_user)):
