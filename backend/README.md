@@ -14,6 +14,13 @@ MinIO: internal-only (not published to host to avoid port conflicts).
 - AI/Photogrammetry integrations are implemented as adapter interfaces with safe placeholders.
   Replace the adapters in `app/workers/adapters/` with your real Stable Diffusion / Hunyuan3D-2 / repair / photogrammetry code.
 
+### Modal AI integration
+The image-to-3D adapter now calls a Modal-hosted FastAPI app. Configure these in `backend/.env` if your endpoints differ:
+- `MODAL_API_URL` (base URL, defaults to the provided Modal app)
+- `MODAL_IMAGE_TO_3D_PATH` (default `/generate`)
+- `MODAL_PROMPT_TO_3D_PATH` (default `/generate-from-text`)
+- `MODAL_API_TIMEOUT_S` (long-running GPU jobs; default 900 seconds)
+
 
 ### Expose MinIO (optional)
 If you really want to open the MinIO Console in your browser, edit `docker-compose.yml` and add a `ports:` section under `minio:` like:
