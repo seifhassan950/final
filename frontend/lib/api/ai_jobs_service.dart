@@ -55,4 +55,9 @@ class AiJobsService {
         .map(AiJob.fromJson)
         .toList();
   }
+
+  Future<AiJob> getJob(String jobId) async {
+    final data = await _api.getJson('/ai/jobs/$jobId', auth: true);
+    return AiJob.fromJson(data);
+  }
 }

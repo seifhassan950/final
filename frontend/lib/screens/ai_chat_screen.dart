@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../api/ai_jobs_service.dart';
 import '../api/r2v_api.dart';
 import '../api/api_exception.dart';
 
@@ -211,14 +212,90 @@ class _AIChatScreenState extends State<AIChatScreen> {
 
     try {
       final job = await r2vAiJobs.createJob(prompt: prompt, settings: settings);
-      await _animateTyping(
-        "Job queued: ${job.id}\nStatus: ${job.status}\nWe'll notify you when it's ready.",
-      );
+      final assistantMessage = _ChatMessage(_formatJobStatus(job), null, false);
+      setState(() => _activeConversation.messages.add(assistantMessage));
+      _scrollToBottom();
+      await _pollJobStatus(job.id, assistantMessage, initialJob: job);
     } on ApiException catch (e) {
       await _animateTyping("Failed to create job: ${e.message}");
     } catch (_) {
       await _animateTyping("Failed to create job. Please try again.");
     }
+  }
+
+  Future<void> _pollJobStatus(
+    String jobId,
+    _ChatMessage message, {
+    AiJob? initialJob,
+  }) async {
+    var currentJob = initialJob;
+    var attempts = 0;
+    const maxAttempts = 150;
+    const delay = Duration(seconds: 2);
+
+    while (mounted &&
+        attempts < maxAttempts &&
+        currentJob != null &&
+        !_isJobComplete(currentJob)) {
+      await Future.delayed(delay);
+      if (!mounted) return;
+
+      try {
+        currentJob = await r2vAiJobs.getJob(jobId);
+      } catch (_) {
+        attempts++;
+        continue;
+      }
+
+      if (!mounted || currentJob == null) return;
+
+      setState(() {
+        message.text = _formatJobStatus(currentJob!);
+      });
+      _scrollToBottom();
+      attempts++;
+    }
+
+    if (!mounted) return;
+
+    if (currentJob != null && _isJobComplete(currentJob)) {
+      setState(() {
+        message.text = _formatJobStatus(currentJob!);
+        _isTyping = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    setState(() {
+      final fallback = currentJob ?? initialJob;
+      message.text = [
+        if (fallback != null) _formatJobStatus(fallback),
+        "Still processing. You can check back later in your dashboard.",
+      ].join("\n");
+      _isTyping = false;
+    });
+    _scrollToBottom();
+  }
+
+  bool _isJobComplete(AiJob job) {
+    return job.status == "succeeded" || job.status == "failed";
+  }
+
+  String _formatJobStatus(AiJob job) {
+    final buffer = StringBuffer()
+      ..writeln("Job ${job.id}")
+      ..writeln("Status: ${job.status} (${job.progress}%)");
+
+    if (job.status == "succeeded") {
+      buffer.writeln("Your model is ready. Open the dashboard to download it.");
+    }
+
+    if (job.status == "failed" && job.error != null && job.error!.isNotEmpty) {
+      buffer.writeln("Error: ${job.error}");
+    }
+
+    return buffer.toString().trimRight();
   }
 
   Future<void> _animateTyping(String text) async {
