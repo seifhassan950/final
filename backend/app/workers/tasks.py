@@ -1,5 +1,8 @@
 from __future__ import annotations
-import tempfile, datetime as dt
+import base64
+import datetime as dt
+import mimetypes
+import tempfile
 from pathlib import Path
 from sqlalchemy.orm import Session
 from app.workers.celery_app import celery_app
@@ -7,8 +10,7 @@ from app.db.session import SessionLocal
 from app.db.models.jobs import AIJob, ScanJob
 from app.services.s3 import s3
 from app.core.config import settings
-from app.workers.adapters.image_gen import generate_image
-from app.workers.adapters.model_gen import image_to_3d
+from app.workers.adapters.model_gen import image_to_3d, prompt_to_3d
 from app.workers.adapters.repair import repair_mesh
 from app.workers.adapters.photogrammetry import reconstruct_from_images
 
@@ -36,24 +38,43 @@ def ai_generate_task(job_id: str):
             glb_raw = td / "raw.glb"
             glb_fixed = td / "fixed.glb"
 
-            generate_image(job.prompt, img_path)
-            job.progress = 25; db.commit()
+            settings_json = job.settings_json or {}
+            image_base64 = settings_json.get("image_base64")
+            image_filename = settings_json.get("image_filename") or "upload.png"
+            image_mime = settings_json.get("image_mime")
 
-            image_to_3d(img_path, glb_raw)
-            job.progress = 60; db.commit()
+            if image_base64:
+                img_path = td / image_filename
+                img_path.write_bytes(base64.b64decode(image_base64))
+                job.progress = 20; db.commit()
+                image_to_3d(img_path, glb_raw)
+                job.progress = 60; db.commit()
+            else:
+                prompt_to_3d(job.prompt, glb_raw)
+                job.progress = 60; db.commit()
+
+            if image_base64:
+                if not image_mime:
+                    image_mime, _ = mimetypes.guess_type(img_path.name)
+                image_mime = image_mime or "image/png"
+
+                out_key_img = f"{job.user_id}/{job.id}/outputs/{img_path.name}"
+                s3.upload_file(str(img_path), settings.s3_bucket_job_outputs, out_key_img, content_type=image_mime)
+                job.output_image_key = out_key_img
+                job.preview_keys = [out_key_img]
+            else:
+                job.preview_keys = []
 
             repair_mesh(glb_raw, glb_fixed)
             job.progress = 80; db.commit()
 
             # Upload outputs
-            out_key_img = f"{job.user_id}/{job.id}/outputs/out.png"
             out_key_glb = f"{job.user_id}/{job.id}/outputs/model.glb"
-            s3.upload_file(str(img_path), settings.s3_bucket_job_outputs, out_key_img, content_type="image/png")
             s3.upload_file(str(glb_fixed), settings.s3_bucket_job_outputs, out_key_glb, content_type="model/gltf-binary")
 
-            job.output_image_key = out_key_img
             job.output_glb_key = out_key_glb
-            job.preview_keys = [out_key_img]
+            if not job.preview_keys:
+                job.preview_keys = [out_key_glb]
             job.status = "succeeded"; job.progress = 100
             job.updated_at = dt.datetime.now(dt.timezone.utc)
             db.commit()
