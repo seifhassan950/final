@@ -60,13 +60,41 @@ def image_to_3d(image_path: Path, out_glb: Path) -> None:
         response.raise_for_status()
         _write_glb_from_response(response, out_glb)
 
+def _prompt_endpoints() -> list[str]:
+    base = settings.modal_api_url.rstrip("/") + "/"
+    configured = settings.modal_prompt_to_3d_path.lstrip("/")
+    candidates = [
+        configured,
+        "generate-from-text",
+        "text-to-3d",
+    ]
+    seen = set()
+    endpoints = []
+    for path in candidates:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        endpoints.append(urljoin(base, path))
+    return endpoints
+
 def prompt_to_3d(prompt: str, out_glb: Path) -> None:
     if not settings.modal_api_url:
         raise ValueError("Modal API URL is not configured")
 
-    endpoint = urljoin(settings.modal_api_url.rstrip("/") + "/", settings.modal_prompt_to_3d_path.lstrip("/"))
     payload = {"prompt": prompt}
+    last_error: Exception | None = None
     with httpx.Client(timeout=settings.modal_api_timeout_s) as client:
-        response = client.post(endpoint, json=payload)
-    response.raise_for_status()
-    _write_glb_from_response(response, out_glb)
+        for endpoint in _prompt_endpoints():
+            response = client.post(endpoint, json=payload)
+            if response.status_code == 404:
+                last_error = httpx.HTTPStatusError(
+                    f"Prompt endpoint not found: {endpoint}",
+                    request=response.request,
+                    response=response,
+                )
+                continue
+            response.raise_for_status()
+            _write_glb_from_response(response, out_glb)
+            return
+    if last_error:
+        raise last_error
