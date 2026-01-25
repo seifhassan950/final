@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import '../api/ai_jobs_service.dart';
 import '../api/r2v_api.dart';
 import '../api/api_exception.dart';
 
