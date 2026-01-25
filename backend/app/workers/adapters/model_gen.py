@@ -63,10 +63,14 @@ def image_to_3d(image_path: Path, out_glb: Path) -> None:
 def _prompt_endpoints() -> list[str]:
     base = settings.modal_api_url.rstrip("/") + "/"
     configured = settings.modal_prompt_to_3d_path.lstrip("/")
+    image_path = settings.modal_image_to_3d_path.lstrip("/")
     candidates = [
         configured,
+        image_path,
         "generate-from-text",
+        "generate",
         "text-to-3d",
+        "prompt-to-3d",
     ]
     seen = set()
     endpoints = []
