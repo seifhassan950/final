@@ -54,5 +54,7 @@ class Settings(BaseSettings):
     modal_image_to_3d_path: str = "/image-to-3d"
     modal_prompt_to_3d_path: str = "/text-to-3d"
     modal_api_timeout_s: int = 900
+    modal_download_retry_s: int = 5
+    modal_download_max_attempts: int = 30
 
 settings = Settings()
