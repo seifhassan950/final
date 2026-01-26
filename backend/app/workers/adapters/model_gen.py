@@ -13,7 +13,7 @@ def _download_with_retry(url: str, *, max_attempts: int | None = None) -> bytes:
     last_error: httpx.HTTPStatusError | None = None
     attempts = max_attempts or settings.modal_download_max_attempts
     for _ in range(attempts):
-        response = httpx.get(url, timeout=settings.modal_api_timeout_s)
+        response = httpx.get(url, timeout=settings.modal_api_timeout_s, follow_redirects=True)
         if response.status_code == 404:
             last_error = httpx.HTTPStatusError(
                 f"Modal download not ready after {attempts} attempts: {url}",
@@ -104,7 +104,7 @@ def image_to_3d(image_path: Path, out_glb: Path) -> None:
         raise ValueError("Modal API URL is not configured")
 
     endpoint = urljoin(settings.modal_api_url.rstrip("/") + "/", settings.modal_image_to_3d_path.lstrip("/"))
-    with httpx.Client(timeout=settings.modal_api_timeout_s) as client:
+    with httpx.Client(timeout=settings.modal_api_timeout_s, follow_redirects=True) as client:
         with image_path.open("rb") as handle:
             files = {"file": (image_path.name, handle, "image/png")}
             response = client.post(endpoint, files=files)
@@ -138,7 +138,7 @@ def prompt_to_3d(prompt: str, out_glb: Path) -> None:
 
     payload = {"prompt": prompt}
     last_error: Exception | None = None
-    with httpx.Client(timeout=settings.modal_api_timeout_s) as client:
+    with httpx.Client(timeout=settings.modal_api_timeout_s, follow_redirects=True) as client:
         for endpoint in _prompt_endpoints():
             response = client.post(endpoint, json=payload)
             if response.status_code == 404:
