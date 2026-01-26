@@ -56,5 +56,6 @@ class Settings(BaseSettings):
     modal_api_timeout_s: int = 900
     modal_download_retry_s: int = 5
     modal_download_max_attempts: int = 30
+    modal_download_fallback_max_attempts: int = 6
 
 settings = Settings()

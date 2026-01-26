@@ -9,13 +9,14 @@ import httpx
 
 from app.core.config import settings
 
-def _download_with_retry(url: str) -> bytes:
+def _download_with_retry(url: str, *, max_attempts: int | None = None) -> bytes:
     last_error: httpx.HTTPStatusError | None = None
-    for _ in range(settings.modal_download_max_attempts):
+    attempts = max_attempts or settings.modal_download_max_attempts
+    for _ in range(attempts):
         response = httpx.get(url, timeout=settings.modal_api_timeout_s)
         if response.status_code == 404:
             last_error = httpx.HTTPStatusError(
-                f"Modal download not ready: {url}",
+                f"Modal download not ready after {attempts} attempts: {url}",
                 request=response.request,
                 response=response,
             )
@@ -69,7 +70,10 @@ def _resolve_download_from_payload(payload: dict, response: httpx.Response) -> b
             settings.modal_api_url.rstrip("/") + "/",
             f"download/{job_id}/{filename}",
         )
-        return _download_with_retry(download_url)
+        return _download_with_retry(
+            download_url,
+            max_attempts=settings.modal_download_fallback_max_attempts,
+        )
     return None
 
 def _write_glb_from_response(response: httpx.Response, out_glb: Path) -> None:
