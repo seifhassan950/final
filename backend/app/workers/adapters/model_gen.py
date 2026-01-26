@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import time
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -8,33 +9,79 @@ import httpx
 
 from app.core.config import settings
 
+def _download_with_retry(url: str) -> bytes:
+    last_error: httpx.HTTPStatusError | None = None
+    for _ in range(settings.modal_download_max_attempts):
+        response = httpx.get(url, timeout=settings.modal_api_timeout_s)
+        if response.status_code == 404:
+            last_error = httpx.HTTPStatusError(
+                f"Modal download not ready: {url}",
+                request=response.request,
+                response=response,
+            )
+            time.sleep(settings.modal_download_retry_s)
+            continue
+        response.raise_for_status()
+        return response.content
+    if last_error:
+        raise last_error
+    raise ValueError(f"Modal download failed: {url}")
+
 def _resolve_asset_url(response: httpx.Response, url: str) -> str:
     if url.startswith("http://") or url.startswith("https://"):
         return url
     base_url = str(response.request.url)
     return urljoin(base_url, url)
 
+def _resolve_download_from_payload(payload: dict, response: httpx.Response) -> bytes | None:
+    artifacts = payload.get("artifacts")
+    if isinstance(artifacts, dict):
+        artifact_url = artifacts.get("glb_url") or artifacts.get("model_url") or artifacts.get("download_url")
+        if artifact_url:
+            resolved_url = _resolve_asset_url(response, artifact_url)
+            return _download_with_retry(resolved_url)
+    if isinstance(artifacts, list):
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            artifact_url = artifact.get("glb_url") or artifact.get("model_url") or artifact.get("download_url") or artifact.get("url")
+            filename = artifact.get("filename") or artifact.get("file_name")
+            if artifact_url and (not filename or filename.endswith(".glb")):
+                resolved_url = _resolve_asset_url(response, artifact_url)
+                return _download_with_retry(resolved_url)
+
+    for key in ("glb_url", "url", "output_url", "model_url", "download_url"):
+        url = payload.get(key)
+        if url:
+            resolved_url = _resolve_asset_url(response, url)
+            return _download_with_retry(resolved_url)
+
+    job_id = payload.get("job_id") or payload.get("id")
+    if job_id:
+        filename = (
+            payload.get("filename")
+            or payload.get("file_name")
+            or payload.get("output_filename")
+            or payload.get("output_file")
+            or "model.glb"
+        )
+        download_url = urljoin(
+            settings.modal_api_url.rstrip("/") + "/",
+            f"download/{job_id}/{filename}",
+        )
+        return _download_with_retry(download_url)
+    return None
+
 def _write_glb_from_response(response: httpx.Response, out_glb: Path) -> None:
     content_type = response.headers.get("content-type", "").lower()
     if "application/json" in content_type:
         payload = response.json()
-        artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
-        if isinstance(artifacts, dict):
-            artifact_url = artifacts.get("glb_url") or artifacts.get("model_url")
-            if artifact_url:
-                resolved_url = _resolve_asset_url(response, artifact_url)
-                downloaded = httpx.get(resolved_url, timeout=settings.modal_api_timeout_s)
-                downloaded.raise_for_status()
-                out_glb.write_bytes(downloaded.content)
-                return
-        for key in ("glb_url", "url", "output_url", "model_url"):
-            url = payload.get(key)
-            if url:
-                resolved_url = _resolve_asset_url(response, url)
-                downloaded = httpx.get(resolved_url, timeout=settings.modal_api_timeout_s)
-                downloaded.raise_for_status()
-                out_glb.write_bytes(downloaded.content)
-                return
+        if not isinstance(payload, dict):
+            raise ValueError("Modal response JSON must be an object")
+        downloaded = _resolve_download_from_payload(payload, response)
+        if downloaded is not None:
+            out_glb.write_bytes(downloaded)
+            return
         for key in ("glb_base64", "model_base64", "data"):
             encoded = payload.get(key)
             if encoded:
