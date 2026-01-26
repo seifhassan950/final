@@ -8,6 +8,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:model_viewer_plus/model_viewer_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../api/ai_jobs_service.dart';
 import '../api/r2v_api.dart';
 import '../api/api_exception.dart';
@@ -250,7 +252,10 @@ class _AIChatScreenState extends State<AIChatScreen> {
       if (!mounted || currentJob == null) return;
 
       setState(() {
-        message.text = _formatJobStatus(currentJob!);
+        message.text = _formatJobStatus(
+          currentJob!,
+          hasDownload: message.modelUrl?.isNotEmpty == true,
+        );
       });
       _scrollToBottom();
       attempts++;
@@ -260,17 +265,27 @@ class _AIChatScreenState extends State<AIChatScreen> {
 
     if (currentJob != null && _isJobComplete(currentJob)) {
       setState(() {
-        message.text = _formatJobStatus(currentJob!);
+        message.text = _formatJobStatus(
+          currentJob!,
+          hasDownload: message.modelUrl?.isNotEmpty == true,
+        );
         _isTyping = false;
       });
       _scrollToBottom();
+      if (currentJob.status == "succeeded") {
+        await _attachModelDownload(jobId, message, currentJob);
+      }
       return;
     }
 
     setState(() {
       final fallback = currentJob ?? initialJob;
       message.text = [
-        if (fallback != null) _formatJobStatus(fallback),
+        if (fallback != null)
+          _formatJobStatus(
+            fallback,
+            hasDownload: message.modelUrl?.isNotEmpty == true,
+          ),
         "Still processing. You can check back later in your dashboard.",
       ].join("\n");
       _isTyping = false;
@@ -282,13 +297,23 @@ class _AIChatScreenState extends State<AIChatScreen> {
     return job.status == "succeeded" || job.status == "failed";
   }
 
-  String _formatJobStatus(AiJob job) {
+  String _formatJobStatus(
+    AiJob job, {
+    bool hasDownload = false,
+    String? downloadError,
+  }) {
     final buffer = StringBuffer()
       ..writeln("Job ${job.id}")
       ..writeln("Status: ${job.status} (${job.progress}%)");
 
     if (job.status == "succeeded") {
-      buffer.writeln("Your model is ready. Open the dashboard to download it.");
+      if (hasDownload) {
+        buffer.writeln("Your model is ready. Preview it below or download it.");
+      } else if (downloadError != null && downloadError.isNotEmpty) {
+        buffer.writeln("Model ready, but the download link failed: $downloadError");
+      } else {
+        buffer.writeln("Your model is ready. Fetching the preview...");
+      }
     }
 
     if (job.status == "failed" && job.error != null && job.error!.isNotEmpty) {
@@ -296,6 +321,49 @@ class _AIChatScreenState extends State<AIChatScreen> {
     }
 
     return buffer.toString().trimRight();
+  }
+
+  Future<void> _attachModelDownload(String jobId, _ChatMessage message, AiJob job) async {
+    if (message.modelUrl?.isNotEmpty == true) {
+      return;
+    }
+    try {
+      final url = await r2vAiJobs.downloadGlb(jobId);
+      if (!mounted) return;
+      if (url.isEmpty) {
+        setState(() {
+          message.text = _formatJobStatus(
+            job,
+            hasDownload: false,
+            downloadError: "Missing download URL",
+          );
+        });
+        return;
+      }
+      setState(() {
+        message.modelUrl = url;
+        message.text = _formatJobStatus(job, hasDownload: true);
+      });
+      _scrollToBottom();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        message.text = _formatJobStatus(
+          job,
+          hasDownload: false,
+          downloadError: e.message,
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        message.text = _formatJobStatus(
+          job,
+          hasDownload: false,
+          downloadError: "Unable to fetch download link",
+        );
+      });
+    }
   }
 
   Future<void> _animateTyping(String text) async {
@@ -609,8 +677,9 @@ class _ChatMessage {
   String text;
   final PlatformFile? image;
   final bool isUser;
+  String? modelUrl;
 
-  _ChatMessage(this.text, this.image, this.isUser);
+  _ChatMessage(this.text, this.image, this.isUser, {this.modelUrl});
 }
 
 // ============================================================================
@@ -1161,6 +1230,42 @@ class _ChatBubble extends StatelessWidget {
               fontWeight: isUser ? FontWeight.w600 : FontWeight.w500,
             ),
           ),
+          if (!isUser && message.modelUrl?.isNotEmpty == true) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: AspectRatio(
+                aspectRatio: 16 / 10,
+                child: Container(
+                  color: Colors.black.withOpacity(0.18),
+                  child: ModelViewer(
+                    key: ValueKey(message.modelUrl),
+                    src: message.modelUrl!,
+                    backgroundColor: Colors.transparent,
+                    cameraControls: true,
+                    autoRotate: true,
+                    environmentImage: "neutral",
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: () async {
+                final url = message.modelUrl;
+                if (url == null || url.isEmpty) return;
+                await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text("Download GLB"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                backgroundColor: Colors.white.withOpacity(0.08),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -60,4 +60,9 @@ class AiJobsService {
     final data = await _api.getJson('/ai/jobs/$jobId', auth: true);
     return AiJob.fromJson(data);
   }
+
+  Future<String> downloadGlb(String jobId) async {
+    final data = await _api.getJson('/ai/jobs/$jobId/download/glb', auth: true);
+    return data['url']?.toString() ?? '';
+  }
 }
