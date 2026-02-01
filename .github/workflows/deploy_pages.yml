@@ -31,10 +31,12 @@ jobs:
         run: |
           echo "/*    /index.html   200" > frontend/build/web/_redirects
 
-      - name: Deploy to Cloudflare Pages (Direct Upload)
-        uses: cloudflare/wrangler-action@v3
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy frontend/build/web --project-name=${{ secrets.CF_PAGES_PROJECT_NAME }} --branch=main
-          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          projectName: gradd
+          directory: frontend/build/web
+          branch: main
+
